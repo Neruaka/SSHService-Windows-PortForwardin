@@ -2,7 +2,8 @@
 using System.ServiceProcess;
 using Renci.SshNet;
 using System.IO;
-using System.Timers; // Ajout du Timer
+using System.Timers;
+using System.Threading.Tasks; // Ajout du Timer
 
 public class Serv : ServiceBase
 {
@@ -108,7 +109,7 @@ public class Serv : ServiceBase
     }
 
     // OnStart
-    protected override void OnStart(string[] args)
+    protected override async void OnStart(string[] args)
     {
         // Demmarage du service 
         File.AppendAllText("E:\\SSHService.txt", $"{DateTime.Now}: Service démarré.\n");
@@ -170,7 +171,7 @@ public class Serv : ServiceBase
             }
 
             File.AppendAllText("E:\\SSHService.txt", $"{DateTime.Now}: Tentative de connexion SSH...\n");
-            StartSSHConnection(authenticationMethod);
+            await StartSSHConnection(authenticationMethod);
 
             // Démarrer le Timer pour vérifier la connexion toutes les 10 secondes
             connectionTimer = new Timer(10000); // 10000 ms = 10 secondes
@@ -184,7 +185,7 @@ public class Serv : ServiceBase
         }
     }
 
-    private void StartSSHConnection(AuthenticationMethod authenticationMethod)
+    private async Task StartSSHConnection(AuthenticationMethod authenticationMethod)
     {
         try
         {
@@ -208,6 +209,11 @@ public class Serv : ServiceBase
             portFwd.Start();
 
             File.AppendAllText("E:\\SSHService.txt", $"{DateTime.Now}: SSH connecté et port forwarding activé : {localPort} -> {destinationHost}:{destinationPort}.\n");
+            while (client.IsConnected)
+            {
+                await Task.Delay(10000);
+                File.AppendAllText("E:\\SSHService.txt", $"{DateTime.Now}: SSH et port forwarding sont toujours actifs.\n");
+            }
         }
         catch (Exception ex)
         {
