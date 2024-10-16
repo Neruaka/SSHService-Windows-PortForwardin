@@ -14,7 +14,7 @@ public class Serv : ServiceBase
 
         ServicesToRun = new ServiceBase[]
         {
-            new Serv()// Crée un nouveau service que l'on ajoute au tableau
+            new Serv() // Crée un nouveau service que l'on ajoute au tableau
         };
         // Lance les services du tableau
         ServiceBase.Run(ServicesToRun);
@@ -30,7 +30,8 @@ public class Serv : ServiceBase
     private string pwd = "";
     private int portSSH = 22;
     private SshClient client;
-    private ForwardedPortLocal portFwd;
+    private ForwardedPortLocal portFwd = null; // Nullable
+
     private Timer connectionTimer;
 
     // Méthode pour traiter les arguments passés au service
@@ -106,6 +107,7 @@ public class Serv : ServiceBase
             }
         }
     }
+
     // Méthode OnStart appelée lors du démarrage du service
     protected override async void OnStart(string[] args)
     {
@@ -114,7 +116,7 @@ public class Serv : ServiceBase
 
         try
         {
-            // Récupération des arguments passés au service (ou via cmd)
+            //Si je souhaite passer les args via le cmd /*admin*/
             string[] SvcArgs = Environment.GetCommandLineArgs();
 
             // Log des arguments pris en compte
@@ -191,6 +193,14 @@ public class Serv : ServiceBase
             client = new SshClient(connectionInfo);
             client.Connect();
 
+            // Si le portFwd est déjà instancié, on le vide
+            if (portFwd != null && portFwd.IsStarted)
+            {
+                portFwd.Stop();
+                portFwd.Dispose();
+                portFwd = null; // On vide le port forwarding
+            }
+
             // Configuration et démarrage du port forwarding
             portFwd = new ForwardedPortLocal(
                 "127.0.0.1",
@@ -256,9 +266,18 @@ public class Serv : ServiceBase
             }
 
             // Tentative de redémarrage du port forwarding si nécessaire
-            if (portFwd != null && !portFwd.IsStarted)
+            if (portFwd == null || !portFwd.IsStarted)
             {
                 File.AppendAllText("E:\\SSHService.txt", $"{DateTime.Now}: Redémarrage du port forwarding...\n");
+
+                // Réinstanciation du port forwarding
+                portFwd = new ForwardedPortLocal(
+                    "127.0.0.1",
+                    uint.Parse(localPort),
+                    destinationHost,
+                    uint.Parse(destinationPort)
+                );
+                client.AddForwardedPort(portFwd);
                 portFwd.Start();
             }
 
@@ -279,6 +298,8 @@ public class Serv : ServiceBase
         if (portFwd != null && portFwd.IsStarted)
         {
             portFwd.Stop();
+            portFwd.Dispose();
+            portFwd = null; // Vider le port forwarding
             File.AppendAllText("E:\\SSHService.txt", $"{DateTime.Now}: Port forwarding arrêté.\n");
         }
 
