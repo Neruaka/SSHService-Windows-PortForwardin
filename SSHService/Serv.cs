@@ -1,9 +1,9 @@
-﻿using System;
+﻿using Renci.SshNet;
+using System;
+using System.Diagnostics;
 using System.ServiceProcess;
-using Renci.SshNet;
-using System.IO;
-using System.Timers;
 using System.Threading.Tasks;
+using System.Timers;
 
 public class Serv : ServiceBase
 {
@@ -30,9 +30,21 @@ public class Serv : ServiceBase
     private string pwd = "";
     private int portSSH = 22;
     private SshClient client;
-    private ForwardedPortLocal portFwd = null; // Nullable
+    private ForwardedPortLocal portFwd = null; // Pas de nullable, mais on initialise à null
 
-    private Timer connectionTimer;
+    private System.Timers.Timer connectionTimer;
+
+    public Serv()
+    {
+        this.ServiceName = "CsshdService";
+        this.EventLog.Log = "Application"; // Journal des événements Windows, catégorie "Application"
+
+        // Si l'événement n'existe pas, le créer
+        if (!EventLog.SourceExists(this.ServiceName))
+        {
+            EventLog.CreateEventSource(this.ServiceName, "Application");
+        }
+    }
 
     // Méthode pour traiter les arguments passés au service
     static void ProcessArguments(
@@ -112,7 +124,7 @@ public class Serv : ServiceBase
     protected override async void OnStart(string[] args)
     {
         // Démarrage du service - Log de l'événement
-        File.AppendAllText("E:\\SSHService.txt", $"{DateTime.Now}: Service démarré.\n");
+        EventLog.WriteEntry($"{DateTime.Now}: Service démarré.", EventLogEntryType.Information);
 
         try
         {
@@ -120,22 +132,22 @@ public class Serv : ServiceBase
             string[] SvcArgs = Environment.GetCommandLineArgs();
 
             // Log des arguments pris en compte
-            File.AppendAllText("E:\\SSHService.txt", $"{DateTime.Now}: Arguments pris en compte :\n");
+            EventLog.WriteEntry($"{DateTime.Now}: Arguments pris en compte :", EventLogEntryType.Information);
             foreach (var arg in SvcArgs)
             {
-                File.AppendAllText("E:\\SSHService.txt", arg + "\n");
+                EventLog.WriteEntry(arg, EventLogEntryType.Information);
             }
 
-            // Si le nombre d'arguments est insuffisant, arrêt du service
-            if (SvcArgs.Length < 6)
-            {
-                File.AppendAllText("E:\\SSHService.txt", $"{DateTime.Now}: Arguments insuffisants pour démarrer le service.\n");
-                this.Stop();
-                return;
-            }
+            // Si le nombre d'arguments est insuffisant, arrêt du service // Finallement ca ne sert a rien 
+            //if (SvcArgs.Length < 6)
+            //{
+            //    EventLog.WriteEntry($"{DateTime.Now}: Arguments insuffisants pour démarrer le service.", EventLogEntryType.Warning);
+            //    this.Stop();
+            //    return;
+            //}
 
             // Récupération et traitement des arguments
-            File.AppendAllText("E:\\SSHService.txt", $"{DateTime.Now}: Récupération des arguments...\n");
+            EventLog.WriteEntry($"{DateTime.Now}: Récupération des arguments...", EventLogEntryType.Information);
             ProcessArguments(SvcArgs, ref host, ref keyFileName, ref localPort, ref destinationHost, ref destinationPort, ref username, ref portSSH, ref pwd);
 
             AuthenticationMethod authenticationMethod;
@@ -143,35 +155,35 @@ public class Serv : ServiceBase
             // Vérification de l'authentification par mot de passe ou clé privée
             if (!string.IsNullOrEmpty(pwd))
             {
-                File.AppendAllText("E:\\SSHService.txt", $"{DateTime.Now}: Authentification par mot de passe.\n");
+                EventLog.WriteEntry($"{DateTime.Now}: Authentification par mot de passe.", EventLogEntryType.Information);
                 authenticationMethod = new PasswordAuthenticationMethod(username, pwd);
             }
             else if (!string.IsNullOrEmpty(keyFileName))
             {
-                File.AppendAllText("E:\\SSHService.txt", $"{DateTime.Now}: Authentification par clé privée.\n");
+                EventLog.WriteEntry($"{DateTime.Now}: Authentification par clé privée.", EventLogEntryType.Information);
                 var file = new PrivateKeyFile(keyFileName);
                 authenticationMethod = new PrivateKeyAuthenticationMethod(username, file);
             }
             else
             {
-                File.AppendAllText("E:\\SSHService.txt", $"{DateTime.Now}: Erreur : ni mot de passe ni clé privée fournis.\n");
+                EventLog.WriteEntry($"{DateTime.Now}: Erreur : ni mot de passe ni clé privée fournis.", EventLogEntryType.Error);
                 this.Stop();
                 return;
             }
 
             // Tentative de connexion SSH
-            File.AppendAllText("E:\\SSHService.txt", $"{DateTime.Now}: Tentative de connexion SSH...\n");
+            EventLog.WriteEntry($"{DateTime.Now}: Tentative de connexion SSH...", EventLogEntryType.Information);
             await StartSSHConnectionAsync(authenticationMethod);
 
             // Démarrage du Timer pour vérifier la connexion toutes les 10 secondes
-            connectionTimer = new Timer(10000); // Vérifie la connexion toutes les 10 secondes
+            connectionTimer = new System.Timers.Timer(10000); // Vérifie la connexion toutes les 10 secondes
             connectionTimer.Elapsed += CheckConnectionStatus;
             connectionTimer.Start();
         }
         catch (Exception ex)
         {
             // Log de l'erreur en cas d'échec lors du démarrage
-            File.AppendAllText("E:\\SSHService.txt", $"{DateTime.Now}: Erreur lors du démarrage : {ex.Message}\n");
+            EventLog.WriteEntry($"{DateTime.Now}: Erreur lors du démarrage : {ex.Message}", EventLogEntryType.Error);
             this.Stop();
         }
     }
@@ -212,19 +224,19 @@ public class Serv : ServiceBase
             portFwd.Start();
 
             // Log de la connexion réussie et du port forwarding actif
-            File.AppendAllText("E:\\SSHService.txt", $"{DateTime.Now}: SSH connecté et port forwarding activé : {localPort} -> {destinationHost}:{destinationPort}.\n");
+            EventLog.WriteEntry($"{DateTime.Now}: SSH connecté et port forwarding activé : {localPort} -> {destinationHost}:{destinationPort}.", EventLogEntryType.Information);
 
             // Boucle pour garder la connexion active et vérifier l'état toutes les 10 secondes
             while (client.IsConnected)
             {
                 await Task.Delay(10000);
-                File.AppendAllText("E:\\SSHService.txt", $"{DateTime.Now}: SSH et port forwarding sont toujours actifs.\n");
+                EventLog.WriteEntry($"{DateTime.Now}: SSH et port forwarding sont toujours actifs.", EventLogEntryType.Information);
             }
         }
         catch (Exception ex)
         {
             // Log de l'erreur en cas d'échec de la connexion SSH
-            File.AppendAllText("E:\\SSHService.txt", $"{DateTime.Now}: Erreur lors de la connexion SSH : {ex.Message}\n");
+            EventLog.WriteEntry($"{DateTime.Now}: Erreur lors de la connexion SSH : {ex.Message}", EventLogEntryType.Error);
             this.Stop();
         }
     }
@@ -237,19 +249,19 @@ public class Serv : ServiceBase
             // Vérification de l'état du client SSH et du port forwarding
             if (client != null && client.IsConnected && portFwd != null && portFwd.IsStarted)
             {
-                File.AppendAllText("E:\\SSHService.txt", $"{DateTime.Now}: La connexion SSH et le port forwarding sont toujours actifs.\n");
+                EventLog.WriteEntry($"{DateTime.Now}: La connexion SSH et le port forwarding sont toujours actifs.", EventLogEntryType.Information);
             }
             else
             {
                 // Si la connexion est interrompue, tentative de reconnexion
-                File.AppendAllText("E:\\SSHService.txt", $"{DateTime.Now}: La connexion SSH ou le port forwarding a été interrompu. Tentative de reconnexion...\n");
+                EventLog.WriteEntry($"{DateTime.Now}: La connexion SSH ou le port forwarding a été interrompu. Tentative de reconnexion...", EventLogEntryType.Warning);
                 ReconnectSSH();
             }
         }
         catch (Exception ex)
         {
             // Log en cas d'erreur lors de la vérification de la connexion
-            File.AppendAllText("E:\\SSHService.txt", $"{DateTime.Now}: Erreur lors de la vérification de la connexion : {ex.Message}\n");
+            EventLog.WriteEntry($"{DateTime.Now}: Erreur lors de la vérification de la connexion : {ex.Message}", EventLogEntryType.Error);
         }
     }
 
@@ -261,14 +273,14 @@ public class Serv : ServiceBase
             // Tentative de reconnexion au client SSH
             if (client != null && !client.IsConnected)
             {
-                File.AppendAllText("E:\\SSHService.txt", $"{DateTime.Now}: Reconnexion SSH en cours...\n");
+                EventLog.WriteEntry($"{DateTime.Now}: Reconnexion SSH en cours...", EventLogEntryType.Information);
                 client.Connect();
             }
 
             // Tentative de redémarrage du port forwarding si nécessaire
             if (portFwd == null || !portFwd.IsStarted)
             {
-                File.AppendAllText("E:\\SSHService.txt", $"{DateTime.Now}: Redémarrage du port forwarding...\n");
+                EventLog.WriteEntry($"{DateTime.Now}: Redémarrage du port forwarding...", EventLogEntryType.Information);
 
                 // Réinstanciation du port forwarding
                 portFwd = new ForwardedPortLocal(
@@ -282,12 +294,12 @@ public class Serv : ServiceBase
             }
 
             // Log de la reconnexion réussie
-            File.AppendAllText("E:\\SSHService.txt", $"{DateTime.Now}: Reconnexion réussie.\n");
+            EventLog.WriteEntry($"{DateTime.Now}: Reconnexion réussie.", EventLogEntryType.Information);
         }
         catch (Exception ex)
         {
             // Log en cas d'échec de la reconnexion
-            File.AppendAllText("E:\\SSHService.txt", $"{DateTime.Now}: Erreur lors de la tentative de reconnexion : {ex.Message}\n");
+            EventLog.WriteEntry($"{DateTime.Now}: Erreur lors de la tentative de reconnexion : {ex.Message}", EventLogEntryType.Error);
         }
     }
 
@@ -300,14 +312,14 @@ public class Serv : ServiceBase
             portFwd.Stop();
             portFwd.Dispose();
             portFwd = null; // Vider le port forwarding
-            File.AppendAllText("E:\\SSHService.txt", $"{DateTime.Now}: Port forwarding arrêté.\n");
+            EventLog.WriteEntry($"{DateTime.Now}: Port forwarding arrêté.", EventLogEntryType.Information);
         }
 
         // Déconnexion du client SSH si connecté
         if (client != null && client.IsConnected)
         {
             client.Disconnect();
-            File.AppendAllText("E:\\SSHService.txt", $"{DateTime.Now}: Connexion SSH fermée.\n");
+            EventLog.WriteEntry($"{DateTime.Now}: Connexion SSH fermée.", EventLogEntryType.Information);
         }
 
         // Arrêt et libération du Timer
@@ -318,6 +330,6 @@ public class Serv : ServiceBase
         }
 
         // Log de l'arrêt du service
-        File.AppendAllText("E:\\SSHService.txt", $"{DateTime.Now}: Service arrêté.\n");
+        EventLog.WriteEntry($"{DateTime.Now}: Service arrêté.", EventLogEntryType.Information);
     }
 }
